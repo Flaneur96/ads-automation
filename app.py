@@ -162,7 +162,46 @@ def internal_error(error):
         "status": "error",
         "message": "Wewnętrzny błąd serwera"
     }), 500
+@app.route("/sync/test-single", methods=["POST"])
+def test_single_sync():
+    """Test sync dla jednego klienta"""
+    data = request.get_json()
+    
+    if not data or not data.get('client_name') or not data.get('google_ads_id'):
+        return jsonify({"error": "Brak client_name lub google_ads_id"}), 400
+    
+    try:
+        from sync.ads_sync import test_sync_single_client
+        result = test_sync_single_client(
+            data['client_name'], 
+            data['google_ads_id']
+        )
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
+@app.route("/sync/check-config")
+def check_sync_config():
+    """Sprawdza czy wszystkie zmienne są ustawione"""
+    required = [
+        "GOOGLE_ADS_DEVELOPER_TOKEN",
+        "GOOGLE_ADS_LOGIN_CUSTOMER_ID",
+        "GOOGLE_ADS_CLIENT_ID",
+        "GOOGLE_ADS_CLIENT_SECRET",
+        "GOOGLE_ADS_REFRESH_TOKEN",
+        "BQ_PROJECT_ID"
+    ]
+    
+    missing = []
+    for var in required:
+        if not os.environ.get(var):
+            missing.append(var)
+    
+    return jsonify({
+        "configured": len(missing) == 0,
+        "missing": missing
+    })
+    
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=False)
