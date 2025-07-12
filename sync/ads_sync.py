@@ -1,5 +1,5 @@
 """
-Google Ads to BigQuery sync - używa zmiennych środowiskowych
+Google Ads to BigQuery sync - uproszczona wersja
 """
 import os
 import logging
@@ -53,22 +53,39 @@ class GoogleAdsSync:
             raise
     
     def ensure_table_exists(self):
-        """Tworzy tabelę jeśli nie istnieje"""
+        """Tworzy tabelę jeśli nie istnieje - ROZSZERZONA SCHEMA"""
         table_id = f"{self.project_id}.{self.dataset_id}.google_ads_performance"
         
+        # Rozszerzona schema zgodna z DASHBOARD PAID ADS
         schema = [
             bigquery.SchemaField("sync_timestamp", "TIMESTAMP"),
             bigquery.SchemaField("date", "DATE"),
             bigquery.SchemaField("customer_id", "STRING"),
             bigquery.SchemaField("customer_name", "STRING"),
+            bigquery.SchemaField("campaign_id", "STRING"),
             bigquery.SchemaField("campaign_name", "STRING"),
+            bigquery.SchemaField("campaign_status", "STRING"),
+            bigquery.SchemaField("ad_group_id", "STRING"),
+            bigquery.SchemaField("ad_group_name", "STRING"),
             bigquery.SchemaField("impressions", "INTEGER"),
             bigquery.SchemaField("clicks", "INTEGER"),
             bigquery.SchemaField("cost", "FLOAT"),
+            bigquery.SchemaField("conversions", "FLOAT"),
+            bigquery.SchemaField("conversions_value", "FLOAT"),
             bigquery.SchemaField("ctr", "FLOAT"),
+            bigquery.SchemaField("cpc", "FLOAT"),
+            bigquery.SchemaField("cpm", "FLOAT"),
+            bigquery.SchemaField("cpa", "FLOAT"),
+            bigquery.SchemaField("roas", "FLOAT"),
         ]
         
         table = bigquery.Table(table_id, schema=schema)
+        
+        # Partycjonowanie dla lepszej wydajności
+        table.time_partitioning = bigquery.TimePartitioning(
+            type_=bigquery.TimePartitioningType.DAY,
+            field="date"
+        )
         
         try:
             table = self.bq_client.create_table(table)
@@ -77,21 +94,33 @@ class GoogleAdsSync:
             if "Already Exists" in str(e):
                 logger.info(f"Table {table_id} already exists")
     
-    def sync_customer_data(self, customer_id: str, customer_name: str):
-        """Synchronizuje dane jednego klienta"""
+    def sync_customer_data(self, customer_id: str, customer_name: str, days_back: int = 30):
+        """Synchronizuje dane jednego klienta - PEŁNE DANE"""
         logger.info(f"Syncing {customer_name} ({customer_id})")
         
-        # Prosty query na start
-        query = """
+        # Pełny query z wszystkimi metrykami
+        start_date = (datetime.now() - timedelta(days=days_back)).strftime('%Y-%m-%d')
+        
+        query = f"""
             SELECT
+                campaign.id,
                 campaign.name,
+                campaign.status,
+                ad_group.id,
+                ad_group.name,
                 segments.date,
                 metrics.impressions,
                 metrics.clicks,
-                metrics.cost_micros
-            FROM campaign
-            WHERE segments.date >= '2024-01-01'
-            LIMIT 100
+                metrics.cost_micros,
+                metrics.conversions,
+                metrics.conversions_value,
+                metrics.all_conversions,
+                metrics.all_conversions_value
+            FROM ad_group
+            WHERE 
+                segments.date >= '{start_date}'
+                AND campaign.status != 'REMOVED'
+            ORDER BY segments.date DESC
         """
         
         customer_id_clean = customer_id.replace('-', '')
@@ -106,39 +135,102 @@ class GoogleAdsSync:
             rows = []
             for batch in response:
                 for row in batch.results:
+                    # Podstawowe metryki
+                    impressions = row.metrics.impressions
+                    clicks = row.metrics.clicks
+                    cost = row.metrics.cost_micros / 1_000_000
+                    conversions = row.metrics.conversions
+                    conversions_value = row.metrics.conversions_value
+                    
+                    # Obliczenia pochodne
+                    ctr = (clicks / impressions * 100) if impressions > 0 else 0
+                    cpc = (cost / clicks) if clicks > 0 else 0
+                    cpm = (cost / impressions * 1000) if impressions > 0 else 0
+                    cpa = (cost / conversions) if conversions > 0 else 0
+                    roas = (conversions_value / cost) if cost > 0 else 0
+                    
                     rows.append({
                         'sync_timestamp': datetime.now(),
-                        'date': row.segments.date,
+                        'date': datetime.strptime(row.segments.date, '%Y-%m-%d').date(),
                         'customer_id': customer_id,
                         'customer_name': customer_name,
+                        'campaign_id': str(row.campaign.id),
                         'campaign_name': row.campaign.name,
-                        'impressions': row.metrics.impressions,
-                        'clicks': row.metrics.clicks,
-                        'cost': row.metrics.cost_micros / 1_000_000,
-                        'ctr': (row.metrics.clicks / row.metrics.impressions * 100) if row.metrics.impressions > 0 else 0
+                        'campaign_status': row.campaign.status.name,
+                        'ad_group_id': str(row.ad_group.id),
+                        'ad_group_name': row.ad_group.name,
+                        'impressions': impressions,
+                        'clicks': clicks,
+                        'cost': round(cost, 2),
+                        'conversions': conversions,
+                        'conversions_value': round(conversions_value, 2),
+                        'ctr': round(ctr, 2),
+                        'cpc': round(cpc, 2),
+                        'cpm': round(cpm, 2),
+                        'cpa': round(cpa, 2),
+                        'roas': round(roas, 2),
                     })
             
             if rows:
                 df = pd.DataFrame(rows)
                 table_id = f"{self.project_id}.{self.dataset_id}.google_ads_performance"
                 
-                job = self.bq_client.load_table_from_dataframe(df, table_id)
+                # Write disposition: WRITE_TRUNCATE dla tego klienta i okresu
+                job_config = bigquery.LoadJobConfig(
+                    write_disposition="WRITE_APPEND",
+                )
+                
+                job = self.bq_client.load_table_from_dataframe(
+                    df, table_id, job_config=job_config
+                )
                 job.result()
                 
                 logger.info(f"Loaded {len(rows)} rows for {customer_name}")
                 return len(rows)
+            else:
+                logger.warning(f"No data found for {customer_name}")
+                return 0
                 
         except Exception as e:
             logger.error(f"Error syncing {customer_name}: {str(e)}")
             raise
 
-def test_sync_single_client(client_name, google_ads_id):
-    """Test dla jednego klienta"""
+def sync_all_clients():
+    """Synchronizuje wszystkich klientów - GŁÓWNA FUNKCJA"""
+    import db
+    
     try:
         sync = GoogleAdsSync()
         sync.ensure_table_exists()
         
-        rows = sync.sync_customer_data(google_ads_id, client_name)
-        return {"success": True, "rows": rows}
+        clients = db.get_all_clients()
+        active_clients = [c for c in clients if c.get('active') and c.get('google_ads_id')]
+        
+        logger.info(f"Starting sync for {len(active_clients)} clients")
+        
+        summary = {
+            'total_clients': len(active_clients),
+            'successful': 0,
+            'failed': 0,
+            'total_rows': 0
+        }
+        
+        for client in active_clients:
+            try:
+                rows = sync.sync_customer_data(
+                    client['google_ads_id'],
+                    client['client_name'],
+                    days_back=30  # Ostatnie 30 dni
+                )
+                summary['successful'] += 1
+                summary['total_rows'] += rows
+            except Exception as e:
+                summary['failed'] += 1
+                logger.error(f"Failed {client['client_name']}: {e}")
+        
+        logger.info(f"Sync completed: {summary}")
+        return summary
+        
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        logger.error(f"Sync failed: {e}")
+        raise
