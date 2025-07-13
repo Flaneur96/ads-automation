@@ -17,7 +17,7 @@ logging.basicConfig(
 )
 logger = app.logger
 
-# --- ENDPOINTY ---
+# --- PODSTAWOWE ENDPOINTY ---
 
 @app.route("/")
 def home():
@@ -50,6 +50,30 @@ def test_db():
             "status": "error",
             "message": f"Błąd połączenia z bazą: {str(e)}"
         }), 500
+
+@app.route("/health")
+def health():
+    """Health check endpoint dla monitoringu"""
+    try:
+        # Sprawdź bazę danych
+        db_status = "healthy"
+        try:
+            db.test_connection()
+        except:
+            db_status = "unhealthy"
+        
+        return jsonify({
+            "status": "healthy",
+            "database": db_status,
+            "timestamp": datetime.now().isoformat()
+        })
+    except Exception as e:
+        return jsonify({
+            "status": "unhealthy",
+            "error": str(e)
+        }), 500
+
+# --- KLIENCI ---
 
 @app.route("/add-client", methods=["POST"])
 def add_client():
@@ -125,60 +149,7 @@ def get_clients():
             "message": "Błąd pobierania listy klientów"
         }), 500
 
-@app.route("/health")
-def health():
-    """Health check endpoint dla monitoringu"""
-    try:
-        # Sprawdź bazę danych
-        db_status = "healthy"
-        try:
-            db.test_connection()
-        except:
-            db_status = "unhealthy"
-        
-        return jsonify({
-            "status": "healthy",
-            "database": db_status,
-            "timestamp": datetime.now().isoformat()
-        })
-    except Exception as e:
-        return jsonify({
-            "status": "unhealthy",
-            "error": str(e)
-        }), 500
-
-# Obsługa błędów
-@app.errorhandler(404)
-def not_found(error):
-    return jsonify({
-        "status": "error",
-        "message": "Endpoint nie został znaleziony"
-    }), 404
-
-@app.errorhandler(500)
-def internal_error(error):
-    logger.error(f"Internal server error: {str(error)}")
-    return jsonify({
-        "status": "error",
-        "message": "Wewnętrzny błąd serwera"
-    }), 500
-@app.route("/sync/test-single", methods=["POST"])
-def test_single_sync():
-    """Test sync dla jednego klienta"""
-    data = request.get_json()
-    
-    if not data or not data.get('client_name') or not data.get('google_ads_id'):
-        return jsonify({"error": "Brak client_name lub google_ads_id"}), 400
-    
-    try:
-        from sync.ads_sync import test_sync_single_client
-        result = test_sync_single_client(
-            data['client_name'], 
-            data['google_ads_id']
-        )
-        return jsonify(result)
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+# --- GOOGLE ADS SYNC ---
 
 @app.route("/sync/check-config")
 def check_sync_config():
@@ -201,7 +172,133 @@ def check_sync_config():
         "configured": len(missing) == 0,
         "missing": missing
     })
+
+@app.route("/sync/test-google-ads", methods=["POST"])
+def test_google_ads_sync():
+    """Test synchronizacji Google Ads"""
+    data = request.get_json()
     
+    if not data or not data.get('client_name') or not data.get('google_ads_id'):
+        return jsonify({"error": "Wymagane: client_name i google_ads_id"}), 400
+    
+    try:
+        from sync.ads_sync import GoogleAdsSync
+        sync = GoogleAdsSync()
+        sync.ensure_table_exists()
+        
+        rows = sync.sync_customer_data(
+            data['google_ads_id'],
+            data['client_name'],
+            days_back=data.get('days_back', 30)
+        )
+        
+        return jsonify({
+            "success": True,
+            "rows_synced": rows,
+            "client": data['client_name']
+        })
+    except Exception as e:
+        logger.error(f"Google Ads sync failed: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/sync/all-google-ads", methods=["POST"])
+def sync_all_google_ads():
+    """Synchronizuje wszystkie konta Google Ads"""
+    try:
+        from sync.ads_sync import sync_all_clients
+        result = sync_all_clients()
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f"Sync all failed: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+# --- META ADS SYNC ---
+
+@app.route("/sync/test-meta-ads", methods=["POST"])
+def test_meta_ads_sync():
+    """Test synchronizacji Meta Ads"""
+    data = request.get_json()
+    
+    if not data or not data.get('account_id'):
+        return jsonify({"error": "Wymagane: account_id"}), 400
+    
+    try:
+        from sync.meta_sync import MetaAdsSync
+        sync = MetaAdsSync()
+        sync.ensure_table_exists()
+        
+        rows = sync.sync_account_data(
+            data['account_id'],
+            data.get('account_name', 'Test Account'),
+            days_back=data.get('days_back', 30)
+        )
+        
+        return jsonify({
+            "success": True,
+            "rows_synced": rows,
+            "account": data.get('account_name', data['account_id'])
+        })
+    except Exception as e:
+        logger.error(f"Meta sync failed: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/sync/all-meta", methods=["POST"])
+def sync_all_meta():
+    """Synchronizuje wszystkie konta Meta"""
+    try:
+        from sync.meta_sync import sync_all_meta_accounts
+        result = sync_all_meta_accounts()
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f"Meta sync all failed: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+# --- SYNC STATUS ---
+
+@app.route("/sync/status")
+def sync_status():
+    """Pokazuje status wszystkich integracji"""
+    integrations = {
+        "google_ads": {
+            "configured": all([
+                os.environ.get("GOOGLE_ADS_DEVELOPER_TOKEN"),
+                os.environ.get("GOOGLE_ADS_REFRESH_TOKEN")
+            ]),
+            "table": "google_ads_performance"
+        },
+        "meta_ads": {
+            "configured": bool(os.environ.get("META_ACCESS_TOKEN")),
+            "table": "meta_ads_performance"
+        },
+        "bigquery": {
+            "configured": all([
+                os.environ.get("BQ_PROJECT_ID"),
+                os.environ.get("GOOGLE_APPLICATION_CREDENTIALS_JSON")
+            ]),
+            "project": os.environ.get("BQ_PROJECT_ID"),
+            "dataset": os.environ.get("BQ_DATASET_ID", "ads_data")
+        }
+    }
+    
+    return jsonify(integrations)
+
+# --- OBSŁUGA BŁĘDÓW ---
+
+@app.errorhandler(404)
+def not_found(error):
+    return jsonify({
+        "status": "error",
+        "message": "Endpoint nie został znaleziony"
+    }), 404
+
+@app.errorhandler(500)
+def internal_error(error):
+    logger.error(f"Internal server error: {str(error)}")
+    return jsonify({
+        "status": "error",
+        "message": "Wewnętrzny błąd serwera"
+    }), 500
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=False)
