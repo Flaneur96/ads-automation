@@ -253,6 +253,47 @@ def sync_all_meta():
         logger.error(f"Meta sync all failed: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
+# --- TIKTOK ADS SYNC ---
+
+@app.route("/sync/test-tiktok-ads", methods=["POST"])
+def test_tiktok_ads_sync():
+    """Test synchronizacji TikTok Ads"""
+    data = request.get_json()
+    
+    if not data or not data.get('advertiser_id'):
+        return jsonify({"error": "Wymagane: advertiser_id"}), 400
+    
+    try:
+        from sync.tiktok_sync import TikTokAdsSync
+        sync = TikTokAdsSync()
+        sync.ensure_table_exists()
+        
+        rows = sync.sync_advertiser_data(
+            data['advertiser_id'],
+            data.get('advertiser_name', 'Test Account'),
+            days_back=data.get('days_back', 30)
+        )
+        
+        return jsonify({
+            "success": True,
+            "rows_synced": rows,
+            "advertiser": data.get('advertiser_name', data['advertiser_id'])
+        })
+    except Exception as e:
+        logger.error(f"TikTok sync failed: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/sync/all-tiktok", methods=["POST"])
+def sync_all_tiktok():
+    """Synchronizuje wszystkie konta TikTok"""
+    try:
+        from sync.tiktok_sync import sync_all_tiktok_accounts
+        result = sync_all_tiktok_accounts()
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f"TikTok sync all failed: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
 # --- SYNC STATUS ---
 
 @app.route("/sync/status")
