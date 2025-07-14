@@ -294,6 +294,47 @@ def sync_all_tiktok():
         logger.error(f"TikTok sync all failed: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
+# --- GA4 SYNC ---
+
+@app.route("/sync/test-ga4", methods=["POST"])
+def test_ga4_sync():
+    """Test synchronizacji GA4"""
+    data = request.get_json()
+    
+    if not data or not data.get('property_id'):
+        return jsonify({"error": "Wymagane: property_id"}), 400
+    
+    try:
+        from sync.ga4_sync import GA4Sync
+        sync = GA4Sync()
+        sync.ensure_table_exists()
+        
+        rows = sync.sync_property_data(
+            data['property_id'],
+            data.get('property_name', 'Test Property'),
+            days_back=data.get('days_back', 30)
+        )
+        
+        return jsonify({
+            "success": True,
+            "rows_synced": rows,
+            "property": data.get('property_name', data['property_id'])
+        })
+    except Exception as e:
+        logger.error(f"GA4 sync failed: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/sync/all-ga4", methods=["POST"])
+def sync_all_ga4():
+    """Synchronizuje wszystkie property GA4"""
+    try:
+        from sync.ga4_sync import sync_all_ga4_properties
+        result = sync_all_ga4_properties()
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f"GA4 sync all failed: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
 # --- SYNC STATUS ---
 
 @app.route("/sync/status")
