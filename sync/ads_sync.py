@@ -95,32 +95,37 @@ class GoogleAdsSync:
                 logger.info(f"Table {table_id} already exists")
     
     def sync_customer_data(self, customer_id: str, customer_name: str, days_back: int = 30):
-        """Synchronizuje dane jednego klienta - PEŁNE DANE"""
-        logger.info(f"Syncing {customer_name} ({customer_id})")
-        
-        # Pełny query z wszystkimi metrykami
-        start_date = (datetime.now() - timedelta(days=days_back)).strftime('%Y-%m-%d')
-        
-        query = f"""
-            SELECT
-                campaign.id,
-                campaign.name,
-                campaign.status,
-                ad_group.id,
-                ad_group.name,
-                segments.date,
-                metrics.impressions,
-                metrics.clicks,
-                metrics.cost_micros,
-                metrics.conversions,
-                metrics.conversions_value,
-                metrics.all_conversions,
-                metrics.all_conversions_value
-            FROM ad_group
-            WHERE 
-                segments.date >= '{start_date}'
-                AND campaign.status != 'REMOVED'
-            ORDER BY segments.date DESC
+    """Synchronizuje dane jednego klienta - PEŁNE DANE"""
+    logger.info(f"Syncing {customer_name} ({customer_id})")
+    
+    # Pełny query z wszystkimi metrykami
+    start_date = (datetime.now() - timedelta(days=days_back)).strftime('%Y-%m-%d')
+    end_date = datetime.now().strftime('%Y-%m-%d')  # <-- DODAJ TO
+    
+    # POPRAWIONE QUERY Z WHERE
+    query = f"""
+        SELECT
+            campaign.id,
+            campaign.name,
+            campaign.status,
+            ad_group.id,
+            ad_group.name,
+            segments.date,
+            metrics.impressions,
+            metrics.clicks,
+            metrics.cost_micros,
+            metrics.conversions,
+            metrics.conversions_value,
+            metrics.all_conversions,
+            metrics.all_conversions_value
+        FROM ad_group
+        WHERE 
+            segments.date BETWEEN '{start_date}' AND '{end_date}'
+            AND campaign.status != 'REMOVED'
+        ORDER BY segments.date DESC
+    """
+    
+    # Reszta kodu bez zmian...
         """
         
         customer_id_clean = customer_id.replace('-', '')
