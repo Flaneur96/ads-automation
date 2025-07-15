@@ -234,3 +234,16 @@ def sync_all_clients():
     except Exception as e:
         logger.error(f"Sync failed: {e}")
         raise
+        
+def test_connection():
+    """Test połączenia z Google Ads API"""
+    try:
+        sync = GoogleAdsSync()
+        # Prosty test - pobierz info o MCC
+        customer_service = sync.ads_client.get_service("CustomerService")
+        customer_resource_name = customer_service.customer_path(
+            os.environ["GOOGLE_ADS_LOGIN_CUSTOMER_ID"]
+        )
+        return {"status": "connected", "mcc": customer_resource_name}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
