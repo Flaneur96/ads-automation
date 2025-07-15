@@ -72,6 +72,27 @@ def health():
             "status": "unhealthy",
             "error": str(e)
         }), 500
+        
+@app.route("/sync/debug-google-ads")
+def debug_google_ads():
+    """Debug Google Ads configuration"""
+    try:
+        from sync.ads_sync import GoogleAdsSync
+        sync = GoogleAdsSync()
+        
+        # Test podstawowej konfiguracji
+        return jsonify({
+            "status": "configured",
+            "project_id": sync.project_id,
+            "dataset_id": sync.dataset_id,
+            "ads_client": "initialized" if sync.ads_client else "failed"
+        })
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": str(e),
+            "type": type(e).__name__
+        }), 500
 
 # --- KLIENCI ---
 
