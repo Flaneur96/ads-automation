@@ -72,6 +72,21 @@ def health():
             "status": "unhealthy",
             "error": str(e)
         }), 500
+
+@app.route("/debug-service-account")
+def debug_service_account():
+    try:
+        import json
+        creds_json = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS_JSON')
+        if creds_json:
+            creds = json.loads(creds_json)
+            return jsonify({
+                "service_account_email": creds.get('client_email'),
+                "project_id": creds.get('project_id')
+            })
+        return jsonify({"error": "No credentials found"})
+    except Exception as e:
+        return jsonify({"error": str(e)})
         
 @app.route("/sync/debug-google-ads")
 def debug_google_ads():
