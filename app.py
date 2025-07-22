@@ -80,6 +80,7 @@ def test_ga4_list_properties():
     
     try:
         from google.analytics.admin_v1alpha import AnalyticsAdminServiceClient
+        from google.analytics.admin_v1alpha.types import ListPropertiesRequest
         
         credentials_json = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS_JSON')
         if credentials_json:
@@ -93,11 +94,15 @@ def test_ga4_list_properties():
         else:
             client = AnalyticsAdminServiceClient()
         
+        # Poprawny request z pustym filtrem
+        request = ListPropertiesRequest(filter="")
+        
         properties = []
-        for property in client.list_properties():
+        for property in client.list_properties(request=request):
             properties.append({
                 "name": property.display_name,
-                "property_id": property.name.split('/')[-1]
+                "property_id": property.name.split('/')[-1],
+                "full_name": property.name
             })
             
         return jsonify({
