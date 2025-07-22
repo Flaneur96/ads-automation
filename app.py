@@ -72,50 +72,40 @@ def health():
             "status": "unhealthy",
             "error": str(e)
         }), 500
-        
+
+# W app.py (dodaj importy jeśli potrzeba: from flask import jsonify)
 @app.route("/test-ga4-list-properties")
 def test_ga4_list_properties():
-    """Lista properties do których mamy dostęp"""
-    import json
-    
+    """Test: Lista properties do których service account ma dostęp"""
     try:
+        from ga4_sync import GA4Sync  # Zaimportuj twoją klasę
+        sync = GA4Sync()  # Inicjalizuj z scopes (już masz w kodzie)
+        
         from google.analytics.admin_v1alpha import AnalyticsAdminServiceClient
+        admin_client = AnalyticsAdminServiceClient(credentials=sync.ga4_client.credentials)
         
-        credentials_json = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS_JSON')
-        if credentials_json:
-            from google.oauth2 import service_account
-            credentials_info = json.loads(credentials_json)
-            credentials = service_account.Credentials.from_service_account_info(
-                credentials_info,
-                scopes=['https://www.googleapis.com/auth/analytics.readonly']
-            )
-            client = AnalyticsAdminServiceClient(credentials=credentials)
-        else:
-            client = AnalyticsAdminServiceClient()
+        response = admin_client.list_properties()
         
-        # Prosty list bez parametrów
         properties = []
-        response = client.list_properties()
-        
         for property in response:
             properties.append({
-                "name": property.display_name,
+                "display_name": property.display_name,
                 "property_id": property.name.split('/')[-1],
                 "full_name": property.name
             })
-            
+        
         return jsonify({
             "status": "success",
-            "properties": properties,
-            "count": len(properties)
+            "count": len(properties),
+            "properties": properties
         })
-        
+    
     except Exception as e:
         return jsonify({
             "error": str(e),
             "type": type(e).__name__
         }), 500
-
+        
 @app.route("/debug-service-account")
 def debug_service_account():
     try:
