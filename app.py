@@ -322,6 +322,44 @@ def sync_all_meta():
         logger.error(f"Meta sync all failed: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
+@app.route("/sync/list-meta-accounts")
+def list_meta_accounts():
+    """Lista wszystkich kont Meta do których mamy dostęp"""
+    try:
+        import requests
+        
+        access_token = os.environ.get("META_ACCESS_TOKEN")
+        if not access_token:
+            return jsonify({"error": "No META_ACCESS_TOKEN"}), 500
+            
+        url = "https://graph.facebook.com/v18.0/me/adaccounts"
+        params = {
+            'access_token': access_token,
+            'fields': 'id,name,account_id,business'
+        }
+        
+        response = requests.get(url, params=params)
+        data = response.json()
+        
+        if 'error' in data:
+            return jsonify({"error": data['error']}), 400
+            
+        accounts = []
+        for account in data.get('data', []):
+            accounts.append({
+                'account_id': account.get('account_id'),
+                'name': account.get('name'),
+                'id': account.get('id')
+            })
+            
+        return jsonify({
+            "count": len(accounts),
+            "accounts": accounts
+        })
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 # --- TIKTOK ADS SYNC ---
 
 @app.route("/sync/test-tiktok-ads", methods=["POST"])
