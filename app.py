@@ -76,6 +76,8 @@ def health():
 @app.route("/test-ga4-list-properties")
 def test_ga4_list_properties():
     """Lista properties do których mamy dostęp"""
+    import json
+    
     try:
         from google.analytics.admin_v1alpha import AnalyticsAdminServiceClient
         
