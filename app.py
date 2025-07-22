@@ -93,10 +93,6 @@ def test_ga4_list_properties():
             client = AnalyticsAdminServiceClient(credentials=credentials)
         else:
             client = AnalyticsAdminServiceClient()
-        
-        # Poprawny request z pustym filtrem
-        request = ListPropertiesRequest(filter="")
-        
         properties = []
         for property in client.list_properties(request=request):
             properties.append({
