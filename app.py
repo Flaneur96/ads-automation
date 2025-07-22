@@ -73,6 +73,42 @@ def health():
             "error": str(e)
         }), 500
 
+@app.route("/test-ga4-list-properties")
+def test_ga4_list_properties():
+    """Lista properties do których mamy dostęp"""
+    try:
+        from google.analytics.admin_v1alpha import AnalyticsAdminServiceClient
+        
+        credentials_json = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS_JSON')
+        if credentials_json:
+            from google.oauth2 import service_account
+            credentials_info = json.loads(credentials_json)
+            credentials = service_account.Credentials.from_service_account_info(
+                credentials_info,
+                scopes=['https://www.googleapis.com/auth/analytics.readonly']
+            )
+            client = AnalyticsAdminServiceClient(credentials=credentials)
+        else:
+            client = AnalyticsAdminServiceClient()
+        
+        properties = []
+        for property in client.list_properties():
+            properties.append({
+                "name": property.display_name,
+                "property_id": property.name.split('/')[-1]
+            })
+            
+        return jsonify({
+            "status": "success",
+            "properties": properties,
+            "count": len(properties)
+        })
+    except Exception as e:
+        return jsonify({
+            "error": str(e),
+            "type": type(e).__name__
+        }), 500
+
 @app.route("/debug-service-account")
 def debug_service_account():
     try:
