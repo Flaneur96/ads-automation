@@ -72,7 +72,7 @@ def health():
             "status": "unhealthy",
             "error": str(e)
         }), 500
-
+        
 @app.route("/test-ga4-list-properties")
 def test_ga4_list_properties():
     """Lista properties do których mamy dostęp"""
@@ -80,7 +80,6 @@ def test_ga4_list_properties():
     
     try:
         from google.analytics.admin_v1alpha import AnalyticsAdminServiceClient
-        from google.analytics.admin_v1alpha.types import ListPropertiesRequest
         
         credentials_json = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS_JSON')
         if credentials_json:
@@ -93,8 +92,12 @@ def test_ga4_list_properties():
             client = AnalyticsAdminServiceClient(credentials=credentials)
         else:
             client = AnalyticsAdminServiceClient()
+        
+        # Prosty list bez parametrów
         properties = []
-        for property in client.list_properties(request=request):
+        response = client.list_properties()
+        
+        for property in response:
             properties.append({
                 "name": property.display_name,
                 "property_id": property.name.split('/')[-1],
@@ -106,6 +109,7 @@ def test_ga4_list_properties():
             "properties": properties,
             "count": len(properties)
         })
+        
     except Exception as e:
         return jsonify({
             "error": str(e),
