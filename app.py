@@ -82,7 +82,7 @@ def test_ga4_list_properties():
         sync = GA4Sync()  # Inicjalizuj z scopes (już masz w kodzie)
         
         from google.analytics.admin_v1alpha import AnalyticsAdminServiceClient
-        admin_client = AnalyticsAdminServiceClient(credentials=sync.ga4_client.credentials)
+        admin_client = AnalyticsAdminServiceClient(credentials=sync.credentials)
         
         response = admin_client.list_properties()
         

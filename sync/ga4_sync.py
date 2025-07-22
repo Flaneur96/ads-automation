@@ -41,6 +41,9 @@ class GA4Sync:
                 ]
             )
             
+            # Zapisz credentials dla innych API
+            self.credentials = credentials
+            
             # GA4 client z credentials + scopes
             self.ga4_client = BetaAnalyticsDataClient(credentials=credentials)
             logger.info("GA4 client initialized with scopes")
