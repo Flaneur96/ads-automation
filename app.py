@@ -76,7 +76,7 @@ def health():
 # W app.py (dodaj importy jeśli potrzeba: from flask import jsonify)
 @app.route("/test-ga4-list-properties")
 def test_ga4_list_properties():
-    """Test: Lista properties do których service account ma dostęp"""
+    """Test: Lista properties do których service account ma dostęp - DEBUG"""
     try:
         from sync.ga4_sync import GA4Sync  # Zaimportuj twoją klasę
         sync = GA4Sync()  # Inicjalizuj z scopes (już masz w kodzie)
