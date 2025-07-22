@@ -22,39 +22,39 @@ class GA4Sync:
         self.setup_clients()
         
     def setup_clients(self):
-    """Konfiguracja GA4 i BigQuery ze zmiennych środowiskowych"""
-    try:
-        # Pobierz credentials JSON
-        credentials_json = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS_JSON')
-        if not credentials_json:
-            raise ValueError("No GOOGLE_APPLICATION_CREDENTIALS_JSON found in env")
-        
-        credentials_info = json.loads(credentials_json)
-        
-        # KLUCZOWA ZMIANA - DODAJ SCOPES!
-        from google.oauth2 import service_account
-        credentials = service_account.Credentials.from_service_account_info(
-            credentials_info,
-            scopes=[
-                'https://www.googleapis.com/auth/analytics.readonly',
-                'https://www.googleapis.com/auth/analytics'
-            ]
-        )
-        
-        # GA4 client z credentials + scopes
-        self.ga4_client = BetaAnalyticsDataClient(credentials=credentials)
-        logger.info("GA4 client initialized with scopes")
-        
-        # BigQuery też może używać tych samych credentials
-        self.bq_client = bigquery.Client(credentials=credentials)
-        self.project_id = os.environ.get('BQ_PROJECT_ID')
-        self.dataset_id = os.environ.get('BQ_DATASET_ID', 'ads_data')
-        
-        logger.info(f"BigQuery configured: {self.project_id}.{self.dataset_id}")
-        
-    except Exception as e:
-        logger.error(f"Failed to initialize: {e}")
-        raise
+        """Konfiguracja GA4 i BigQuery ze zmiennych środowiskowych"""
+        try:
+            # Pobierz credentials JSON
+            credentials_json = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS_JSON')
+            if not credentials_json:
+                raise ValueError("No GOOGLE_APPLICATION_CREDENTIALS_JSON found in env")
+            
+            credentials_info = json.loads(credentials_json)
+            
+            # KLUCZOWA ZMIANA - DODAJ SCOPES!
+            from google.oauth2 import service_account
+            credentials = service_account.Credentials.from_service_account_info(
+                credentials_info,
+                scopes=[
+                    'https://www.googleapis.com/auth/analytics.readonly',
+                    'https://www.googleapis.com/auth/analytics'
+                ]
+            )
+            
+            # GA4 client z credentials + scopes
+            self.ga4_client = BetaAnalyticsDataClient(credentials=credentials)
+            logger.info("GA4 client initialized with scopes")
+            
+            # BigQuery też może używać tych samych credentials
+            self.bq_client = bigquery.Client(credentials=credentials)
+            self.project_id = os.environ.get('BQ_PROJECT_ID')
+            self.dataset_id = os.environ.get('BQ_DATASET_ID', 'ads_data')
+            
+            logger.info(f"BigQuery configured: {self.project_id}.{self.dataset_id}")
+            
+        except Exception as e:
+            logger.error(f"Failed to initialize: {e}")
+            raise
     
     def ensure_table_exists(self):
         """Tworzy tabelę ga4_performance jeśli nie istnieje"""
