@@ -78,7 +78,7 @@ def health():
 def test_ga4_list_properties():
     """Test: Lista properties do których service account ma dostęp"""
     try:
-        from ga4_sync import GA4Sync  # Zaimportuj twoją klasę
+        from sync.ga4_sync import GA4Sync  # Zaimportuj twoją klasę
         sync = GA4Sync()  # Inicjalizuj z scopes (już masz w kodzie)
         
         from google.analytics.admin_v1alpha import AnalyticsAdminServiceClient
