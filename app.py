@@ -360,6 +360,38 @@ def list_meta_accounts():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@app.route("/sync/debug-meta", methods=["POST"])
+def debug_meta():
+    """Debug Meta API call"""
+    data = request.get_json()
+    account_id = data.get('account_id', '1117366583151675')
+    
+    try:
+        import requests
+        import json
+        from datetime import datetime, timedelta
+        
+        access_token = os.environ.get("META_ACCESS_TOKEN")
+        
+        # Test prostego zapytania
+        url = f"https://graph.facebook.com/v18.0/act_{account_id}"
+        params = {
+            'access_token': access_token,
+            'fields': 'id,name,account_status,spend_cap'
+        }
+        
+        response = requests.get(url, params=params)
+        
+        return jsonify({
+            "status_code": response.status_code,
+            "response": response.json(),
+            "account_id": account_id,
+            "url": url
+        })
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 # --- TIKTOK ADS SYNC ---
 
 @app.route("/sync/test-tiktok-ads", methods=["POST"])
