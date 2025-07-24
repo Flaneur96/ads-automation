@@ -2,6 +2,7 @@
 app.py - główny serwer Flask dla automatyzacji kampanii reklamowych
 """
 
+from sync.scheduler import init_scheduler, get_scheduler_status, trigger_manual_sync
 from flask import Flask, jsonify, request
 from datetime import datetime
 import os
