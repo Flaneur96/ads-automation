@@ -125,6 +125,16 @@ class MetaAdsSync:
         
         while url:
             response = requests.get(url, params=params)
+
+            if response.status_code != 200:
+                error_details = {
+                    'status_code': response.status_code,
+                    'response_text': response.text,
+                    'url': url,
+                    'params': params
+                }
+                logger.error(f"Meta API error details: {error_details}")
+                raise Exception(f"Meta API error: {response.status_code} - {response.text}")
             
             if response.status_code != 200:
                 logger.error(f"Meta API error: {response.text}")
