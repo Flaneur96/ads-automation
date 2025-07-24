@@ -2,12 +2,12 @@
 app.py - główny serwer Flask dla automatyzacji kampanii reklamowych
 """
 
-from sync.scheduler import init_scheduler, get_scheduler_status, trigger_manual_sync
 from flask import Flask, jsonify, request
 from datetime import datetime
 import os
 import logging
 import db
+from sync.scheduler import init_scheduler, get_scheduler_status, trigger_manual_sync
 
 app = Flask(__name__)
 
@@ -17,6 +17,11 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = app.logger
+
+# Inicjalizacja schedulera
+if os.environ.get('ENABLE_SCHEDULER', 'true').lower() == 'true':
+    init_scheduler()
+    logger.info("Scheduler initialized")
 
 # --- PODSTAWOWE ENDPOINTY ---
 
@@ -473,6 +478,22 @@ def sync_all_ga4():
         return jsonify(result)
     except Exception as e:
         logger.error(f"GA4 sync all failed: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+# --- SCHEDULER ENDPOINTS ---
+
+@app.route("/scheduler/status")
+def scheduler_status():
+    """Status schedulera"""
+    return jsonify(get_scheduler_status())
+
+@app.route("/scheduler/trigger", methods=["POST"])
+def trigger_sync():
+    """Ręczne uruchomienie synchronizacji"""
+    try:
+        result = trigger_manual_sync()
+        return jsonify(result)
+    except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 # --- SYNC STATUS ---
