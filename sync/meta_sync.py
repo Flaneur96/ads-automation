@@ -99,7 +99,8 @@ class MetaAdsSync:
             'clicks',
             'spend',
             'conversions',
-            'purchases',
+            'actions',
+            'action_values',
             'purchase_roas',
             'ctr',
             'cpc',
@@ -174,18 +175,31 @@ class MetaAdsSync:
                 impressions = int(insight.get('impressions', 0))
                 clicks = int(insight.get('clicks', 0))
                 spend = float(insight.get('spend', 0))
-                
-                # Konwersje
-                conversions_data = insight.get('conversions', [])
-                total_conversions = sum(float(c.get('value', 0)) for c in conversions_data)
-                
-                # Zakupy
-                purchases_data = insight.get('purchases', [])
-                purchases = sum(int(p.get('value', 0)) for p in purchases_data)
-                
+
+                # Konwersje i zakupy z actions
+                actions = insight.get('actions', [])
+                purchases = 0
+                total_conversions = 0
+
+                for action in actions:
+                    action_type = action.get('action_type', '')
+                    value = float(action.get('value', 0))
+    
+                    if action_type == 'purchase':
+                        purchases += int(value)
+                    if action_type in ['purchase', 'lead', 'complete_registration']:
+                        total_conversions += value
+
+                # Wartości konwersji
+                action_values = insight.get('action_values', [])
+                purchase_value = 0
+
+                for action_value in action_values:
+                    if action_value.get('action_type') == 'purchase':
+                        purchase_value += float(action_value.get('value', 0))
+
                 # ROAS
-                purchase_roas_data = insight.get('purchase_roas', [])
-                roas = float(purchase_roas_data[0].get('value', 0)) if purchase_roas_data else 0
+                roas = (purchase_value / spend) if spend > 0 else 0
                 
                 rows.append({
                     'sync_timestamp': datetime.now(),
