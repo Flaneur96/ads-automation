@@ -8,7 +8,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 import db
 from sync.ads_sync import sync_all_clients as sync_google_ads
-from sync.meta_sync import sync_all_clients as sync_meta_ads
+from sync.meta_sync import sync_all_meta_accounts as sync_meta_ads  # ← ZMIANA TUTAJ!
 
 logger = logging.getLogger(__name__)
 
