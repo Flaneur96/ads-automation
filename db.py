@@ -116,6 +116,10 @@ def get_all_clients() -> List[Dict]:
                     client_name,
                     industry,
                     specialist_email,
+                    google_ads_id,       
+                    meta_account_id,
+                    tiktok_advertiser_id,
+                    ga4_property_id,  
                     active,
                     created_at,
                     updated_at
