@@ -289,6 +289,41 @@ def sync_all_google_ads():
 
 # --- META ADS SYNC ---
 
+@app.route("/meta/token-status")
+def meta_token_status():
+    """Sprawdza status Meta tokena"""
+    try:
+        from sync.meta_token_manager import MetaTokenManager
+        manager = MetaTokenManager()
+        status = manager.get_token_status()
+        return jsonify(status)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/meta/refresh-token", methods=["POST"])
+def meta_refresh_token():
+    """Ręcznie odświeża Meta token"""
+    try:
+        from sync.meta_token_manager import MetaTokenManager
+        manager = MetaTokenManager()
+        result = manager.auto_refresh_if_needed(days_threshold=30)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/meta/test-token")
+def meta_test_token():
+    """Test czy token działa"""
+    try:
+        from sync.meta_token_manager import test_token_manager
+        status, refresh = test_token_manager()
+        return jsonify({
+            "status": status,
+            "refresh_test": refresh
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 @app.route("/sync/test-meta-ads", methods=["POST"])
 def test_meta_ads_sync():
     """Test synchronizacji Meta Ads"""
