@@ -1,5 +1,5 @@
 """
-Scheduler dla automatycznej synchronizacji danych
+sync/scheduler.py - Scheduler dla automatycznej synchronizacji danych
 """
 import os
 import logging
@@ -8,7 +8,8 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 import db
 from sync.ads_sync import sync_all_clients as sync_google_ads
-from sync.meta_sync import sync_all_meta_accounts as sync_meta_ads  # ← ZMIANA TUTAJ!
+from sync.meta_sync import sync_all_meta_accounts as sync_meta_ads
+from sync.meta_token_manager import scheduled_token_refresh  # ← DODANE
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +59,15 @@ def init_scheduler():
     global scheduler
     
     scheduler = BackgroundScheduler()
+    
+    # Token refresh - codziennie o 7:00 (przed synchronizacją)
+    scheduler.add_job(
+        scheduled_token_refresh,
+        CronTrigger(hour=7, minute=0),
+        id='meta_token_refresh',
+        name='Meta Token Auto-Refresh',
+        replace_existing=True
+    )
     
     # Codzienna synchronizacja o 8:00
     scheduler.add_job(
