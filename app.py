@@ -476,6 +476,16 @@ def sync_all_tiktok():
 
 # --- GA4 SYNC ---
 
+@app.route("/sync/test-ga4-only", methods=["POST"])
+def test_ga4_only():
+    """Test tylko GA4 sync"""
+    try:
+        from sync.scheduler import trigger_ga4_only
+        result = trigger_ga4_only()
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+        
 @app.route("/sync/test-ga4", methods=["POST"])
 def test_ga4_sync():
     """Test synchronizacji GA4"""
