@@ -9,7 +9,8 @@ from apscheduler.triggers.cron import CronTrigger
 import db
 from sync.ads_sync import sync_all_clients as sync_google_ads
 from sync.meta_sync import sync_all_meta_accounts as sync_meta_ads
-from sync.meta_token_manager import scheduled_token_refresh  # ← DODANE
+from sync.ga4_sync import sync_all_ga4_clients  # ← DODANE GA4
+from sync.meta_token_manager import scheduled_token_refresh
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +24,8 @@ def daily_sync_job():
     results = {
         'timestamp': datetime.now().isoformat(),
         'google_ads': {'success': 0, 'failed': 0, 'total_rows': 0},
-        'meta_ads': {'success': 0, 'failed': 0, 'total_rows': 0}
+        'meta_ads': {'success': 0, 'failed': 0, 'total_rows': 0},
+        'ga4': {'success': 0, 'failed': 0, 'total_rows': 0}  # ← DODANE GA4
     }
     
     try:
@@ -48,8 +50,16 @@ def daily_sync_job():
         logger.error(f"Meta Ads sync failed: {e}")
         results['meta_ads']['error'] = str(e)
     
-    # 3. GA4 - nie robimy nic, Google sam eksportuje
-    logger.info("GA4 is handled by BigQuery Export automatically")
+    try:
+        # 3. GA4 - teraz też synchronizujemy do unified table
+        logger.info("Starting GA4 sync...")
+        ga4_results = sync_all_ga4_clients()
+        results['ga4'] = ga4_results
+        logger.info(f"GA4 sync completed: {ga4_results}")
+        
+    except Exception as e:
+        logger.error(f"GA4 sync failed: {e}")
+        results['ga4']['error'] = str(e)
     
     logger.info(f"=== Daily sync completed: {results} ===")
     return results
@@ -61,20 +71,24 @@ def init_scheduler():
     scheduler = BackgroundScheduler()
     
     # Token refresh - codziennie o 7:00 (przed synchronizacją)
-    scheduler.add_job(
-        scheduled_token_refresh,
-        CronTrigger(hour=7, minute=0),
-        id='meta_token_refresh',
-        name='Meta Token Auto-Refresh',
-        replace_existing=True
-    )
+    try:
+        scheduler.add_job(
+            scheduled_token_refresh,
+            CronTrigger(hour=7, minute=0),
+            id='meta_token_refresh',
+            name='Meta Token Auto-Refresh',
+            replace_existing=True
+        )
+        logger.info("Meta token refresh job scheduled")
+    except Exception as e:
+        logger.warning(f"Could not schedule Meta token refresh: {e}")
     
     # Codzienna synchronizacja o 8:00
     scheduler.add_job(
         daily_sync_job,
         CronTrigger(hour=8, minute=0),
         id='daily_sync',
-        name='Daily sync all platforms',
+        name='Daily sync all platforms (Google Ads + Meta + GA4)',
         replace_existing=True
     )
     
@@ -87,9 +101,10 @@ def init_scheduler():
             id='frequent_sync',
             name='Frequent sync (test mode)'
         )
+        logger.info("Frequent sync enabled (every 6 hours)")
     
     scheduler.start()
-    logger.info("Scheduler started successfully")
+    logger.info("Scheduler started successfully with Google Ads, Meta Ads, and GA4 sync")
 
 def get_scheduler():
     """Zwraca instancję schedulera"""
@@ -111,10 +126,41 @@ def get_scheduler_status():
     
     return {
         "status": "running" if scheduler.running else "stopped",
-        "jobs": jobs
+        "jobs": jobs,
+        "platforms": ["Google Ads", "Meta Ads", "GA4"]
     }
 
 def trigger_manual_sync():
     """Ręczne uruchomienie synchronizacji"""
-    logger.info("Manual sync triggered")
+    logger.info("Manual sync triggered for all platforms")
     return daily_sync_job()
+
+def trigger_ga4_only():
+    """Ręczne uruchomienie tylko GA4 sync"""
+    logger.info("Manual GA4 sync triggered")
+    try:
+        from sync.ga4_sync import sync_all_ga4_clients
+        result = sync_all_ga4_clients()
+        logger.info(f"Manual GA4 sync completed: {result}")
+        return result
+    except Exception as e:
+        logger.error(f"Manual GA4 sync failed: {e}")
+        return {"success": False, "error": str(e)}
+
+def get_sync_summary():
+    """Zwraca podsumowanie ostatnich synchronizacji"""
+    try:
+        # Tutaj można dodać logikę pobierania statystyk z BigQuery
+        # Na razie prosty placeholder
+        return {
+            "last_sync": "Daily sync runs at 08:00",
+            "platforms": {
+                "google_ads": "Active",
+                "meta_ads": "Active", 
+                "ga4": "Active"
+            },
+            "next_sync": scheduler.get_job('daily_sync').next_run_time.isoformat() if scheduler and scheduler.get_job('daily_sync') else None
+        }
+    except Exception as e:
+        logger.error(f"Error getting sync summary: {e}")
+        return {"error": str(e)}
