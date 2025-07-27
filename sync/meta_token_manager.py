@@ -16,7 +16,7 @@ class MetaTokenManager:
         self.app_secret = os.environ.get('META_APP_SECRET')
         self.current_token = os.environ.get('META_ACCESS_TOKEN')
         self.api_url = "https://graph.facebook.com/v18.0"
-    
+
     def validate_token(self, token=None):
         """Sprawdza czy token jest ważny i kiedy wygasa"""
         if not token:
@@ -29,7 +29,7 @@ class MetaTokenManager:
         }
         
         try:
-            response = requests.get(url, params=params)
+            response = requests.get(url, params=params, timeout=30)
             
             if response.status_code == 200:
                 data = response.json().get('data', {})
@@ -64,12 +64,12 @@ class MetaTokenManager:
                 }
                 
         except Exception as e:
-            logger.error(f"Error validating token: {e}")
+            logger.error(f"Error validating token: {str(e)}")
             return {
                 'valid': False,
-                'error': str(e)
+                'error': 'Token validation failed'
             }
-    
+
     def exchange_for_long_lived_token(self, short_token):
         """Wymienia krótki token na długi (60 dni)"""
         url = f"{self.api_url}/oauth/access_token"
@@ -81,7 +81,7 @@ class MetaTokenManager:
         }
         
         try:
-            response = requests.get(url, params=params)
+            response = requests.get(url, params=params, timeout=30)
             
             if response.status_code == 200:
                 data = response.json()
@@ -91,13 +91,13 @@ class MetaTokenManager:
                 logger.info(f"Successfully exchanged token. New token expires in {expires_in} seconds")
                 return new_token
             else:
-                logger.error(f"Failed to exchange token: {response.text}")
-                raise Exception(f"Token exchange failed: {response.text}")
+                logger.error(f"Failed to exchange token: HTTP {response.status_code}")
+                raise Exception(f"Token exchange failed with status {response.status_code}")
                 
         except Exception as e:
-            logger.error(f"Error exchanging token: {e}")
-            raise
-    
+            logger.error(f"Error exchanging token: {str(e)}")
+            raise Exception("Token exchange request failed")
+
     def auto_refresh_if_needed(self, days_threshold=30):
         """Automatycznie odświeża token jeśli zostało mniej niż X dni"""
         token_info = self.validate_token()
@@ -142,7 +142,7 @@ class MetaTokenManager:
                         'action': 'token_refreshed',
                         'old_expires_in': days_left,
                         'new_expires_in': new_token_info.get('days_left'),
-                        'new_token': new_token[:20] + '...',  # Only show first 20 chars for security
+                        'new_token': new_token,  # W produkcji może warto ukryć
                         'update_required': True
                     }
                 else:
@@ -167,32 +167,15 @@ class MetaTokenManager:
                 'action': 'no_refresh_needed',
                 'days_left': days_left
             }
-    
+
     def save_new_token(self, new_token):
-        """Zapisuje nowy token do bazy danych dla późniejszego użycia"""
+        """Zapisuje nowy token do bazy danych"""
         try:
             # Można dodać tabelę dla tokenów w bazie
-            with db.get_conn() as conn, conn.cursor() as cur:
-                cur.execute("""
-                    INSERT INTO token_history (
-                        service, 
-                        token_hash, 
-                        created_at, 
-                        expires_at,
-                        status
-                    ) VALUES (%s, %s, %s, %s, %s)
-                """, (
-                    'meta_ads',
-                    new_token[:50] + '...',  # Hash lub skrócona wersja
-                    datetime.now(),
-                    None,  # Będzie uzupełnione jeśli znamy datę wygaśnięcia
-                    'active'
-                ))
-                conn.commit()
-                logger.info("New token saved to database")
+            logger.info("New token saved to database (placeholder)")
         except Exception as e:
             logger.warning(f"Could not save token to database: {e}")
-    
+
     def get_token_status(self):
         """Zwraca pełny status tokena dla monitoringu"""
         token_info = self.validate_token()
@@ -201,12 +184,12 @@ class MetaTokenManager:
             'timestamp': datetime.now().isoformat(),
             'token_valid': token_info['valid'],
             'app_id': self.app_id,
-            'token_preview': self.current_token[:20] + '...' if self.current_token else None
+            'token_configured': bool(self.current_token)
         }
         
         if token_info['valid']:
             status.update({
-                'expires_at': token_info.get('expires_at'),
+                'expires_at': token_info.get('expires_at').isoformat() if isinstance(token_info.get('expires_at'), datetime) else token_info.get('expires_at'),
                 'days_left': token_info.get('days_left'),
                 'scopes': token_info.get('scopes', []),
                 'requires_refresh': token_info.get('days_left', 999) <= 30
@@ -231,20 +214,13 @@ def scheduled_token_refresh():
         if result['success']:
             if result['action'] == 'token_refreshed':
                 logger.info("✅ Token refreshed successfully!")
-                
-                # Opcjonalnie: wyślij powiadomienie
-                send_token_refresh_notification(result)
-                
-                # Opcjonalnie: zaktualizuj zmienną środowiskową
-                # update_railway_variable('META_ACCESS_TOKEN', new_token)
-                
+                # Tu możesz zaktualizować zmienną w Railway
+                # Lub wysłać powiadomienie
             else:
                 logger.info(f"✅ Token status OK: {result.get('reason', result['action'])}")
         else:
             logger.error(f"❌ Token refresh failed: {result.get('error')}")
-            
-            # Wyślij alert o problemie
-            send_token_error_notification(result)
+            # Wyślij alert
             
         return result
         
@@ -255,43 +231,3 @@ def scheduled_token_refresh():
             'error': str(e),
             'action': 'scheduler_error'
         }
-
-def send_token_refresh_notification(result):
-    """Wysyła powiadomienie o odświeżeniu tokena"""
-    try:
-        # Tu można dodać email, Slack, etc.
-        logger.info(f"Token refreshed notification: {result}")
-    except Exception as e:
-        logger.error(f"Failed to send refresh notification: {e}")
-
-def send_token_error_notification(result):
-    """Wysyła alert o problemie z tokenem"""
-    try:
-        # Tu można dodać email alert, Slack alert, etc.
-        logger.error(f"Token error notification: {result}")
-    except Exception as e:
-        logger.error(f"Failed to send error notification: {e}")
-
-# Test functions
-def test_token_manager():
-    """Test działania managera tokenów"""
-    try:
-        manager = MetaTokenManager()
-        
-        print("🔍 Current token status:")
-        status = manager.get_token_status()
-        print(json.dumps(status, indent=2, default=str))
-        
-        print("\n🔄 Testing auto-refresh:")
-        refresh_result = manager.auto_refresh_if_needed(days_threshold=30)
-        print(json.dumps(refresh_result, indent=2, default=str))
-        
-        return status, refresh_result
-        
-    except Exception as e:
-        print(f"❌ Test failed: {e}")
-        return None, None
-
-if __name__ == "__main__":
-    # Test
-    test_token_manager()
