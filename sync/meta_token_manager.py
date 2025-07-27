@@ -3,10 +3,10 @@ sync/meta_token_manager.py - automatyczne odnawianie Meta Access Token
 """
 import os
 import logging
-import requests
 from datetime import datetime, timedelta
 import json
 import db
+from .http_client import get_secure_client, APIResponse, APIError
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +16,7 @@ class MetaTokenManager:
         self.app_secret = os.environ.get('META_APP_SECRET')
         self.current_token = os.environ.get('META_ACCESS_TOKEN')
         self.api_url = "https://graph.facebook.com/v18.0"
+        self.client = get_secure_client()
     
     def validate_token(self, token=None):
         """Sprawdza czy token jest ważny i kiedy wygasa"""
@@ -29,7 +30,7 @@ class MetaTokenManager:
         }
         
         try:
-            response = requests.get(url, params=params)
+            response = self.client.get(url, params=params)
             
             if response.status_code == 200:
                 data = response.json().get('data', {})
@@ -64,10 +65,10 @@ class MetaTokenManager:
                 }
                 
         except Exception as e:
-            logger.error(f"Error validating token: {e}")
+            logger.error("Error validating token: API request failed")
             return {
                 'valid': False,
-                'error': str(e)
+                'error': 'Token validation failed'
             }
     
     def exchange_for_long_lived_token(self, short_token):
@@ -81,7 +82,7 @@ class MetaTokenManager:
         }
         
         try:
-            response = requests.get(url, params=params)
+            response = self.client.get(url, params=params)
             
             if response.status_code == 200:
                 data = response.json()
@@ -91,12 +92,12 @@ class MetaTokenManager:
                 logger.info(f"Successfully exchanged token. New token expires in {expires_in} seconds")
                 return new_token
             else:
-                logger.error(f"Failed to exchange token: {response.text}")
-                raise Exception(f"Token exchange failed: {response.text}")
+                logger.error(f"Failed to exchange token: HTTP {response.status_code}")
+                raise Exception(f"Token exchange failed with status {response.status_code}")
                 
         except Exception as e:
-            logger.error(f"Error exchanging token: {e}")
-            raise
+            logger.error("Error exchanging token: Request failed")
+            raise Exception("Token exchange request failed")
     
     def auto_refresh_if_needed(self, days_threshold=30):
         """Automatycznie odświeża token jeśli zostało mniej niż X dni"""
@@ -142,7 +143,7 @@ class MetaTokenManager:
                         'action': 'token_refreshed',
                         'old_expires_in': days_left,
                         'new_expires_in': new_token_info.get('days_left'),
-                        'new_token': new_token[:20] + '...',  # Only show first 20 chars for security
+                        'new_token': '***HIDDEN***',  # Don't log tokens for security
                         'update_required': True
                     }
                 else:
@@ -183,7 +184,7 @@ class MetaTokenManager:
                     ) VALUES (%s, %s, %s, %s, %s)
                 """, (
                     'meta_ads',
-                    new_token[:50] + '...',  # Hash lub skrócona wersja
+                    'token_hash_placeholder',  # Don't store actual tokens
                     datetime.now(),
                     None,  # Będzie uzupełnione jeśli znamy datę wygaśnięcia
                     'active'
@@ -201,7 +202,7 @@ class MetaTokenManager:
             'timestamp': datetime.now().isoformat(),
             'token_valid': token_info['valid'],
             'app_id': self.app_id,
-            'token_preview': self.current_token[:20] + '...' if self.current_token else None
+            'token_configured': bool(self.current_token)
         }
         
         if token_info['valid']:
