@@ -1,5 +1,5 @@
 """
-Meta Ads (Facebook) to BigQuery sync - wersja dostosowana do raportu
+Meta Ads (Facebook) to BigQuery sync
 """
 import os
 import logging
@@ -20,12 +20,12 @@ class MetaAdsSync:
         try:
             # Meta API config
             self.access_token = os.environ["META_ACCESS_TOKEN"]
-            self.api_version = "v18.0"
+            self.api_version = "v18.0"  # Najnowsza wersja
             self.base_url = f"https://graph.facebook.com/{self.api_version}"
             
             logger.info("Meta API configured")
             
-            # BigQuery
+            # BigQuery - ten sam co dla Google Ads
             bq_credentials = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS_JSON')
             if bq_credentials:
                 credentials_info = json.loads(bq_credentials)
@@ -45,7 +45,7 @@ class MetaAdsSync:
             raise
     
     def ensure_table_exists(self):
-        """Tworzy tabelę meta_ads_performance - tylko potrzebne kolumny"""
+        """Tworzy tabelę meta_ads_performance jeśli nie istnieje"""
         table_id = f"{self.project_id}.{self.dataset_id}.meta_ads_performance"
         
         schema = [
@@ -59,19 +59,16 @@ class MetaAdsSync:
             bigquery.SchemaField("adset_name", "STRING"),
             bigquery.SchemaField("ad_id", "STRING"),
             bigquery.SchemaField("ad_name", "STRING"),
-            # Metryki z raportu
             bigquery.SchemaField("impressions", "INTEGER"),
+            bigquery.SchemaField("clicks", "INTEGER"),
             bigquery.SchemaField("spend", "FLOAT"),
-            bigquery.SchemaField("link_clicks", "INTEGER"),
-            bigquery.SchemaField("landing_page_views", "INTEGER"),
-            bigquery.SchemaField("add_to_cart", "INTEGER"),
-            bigquery.SchemaField("add_to_cart_value", "FLOAT"),
+            bigquery.SchemaField("conversions", "FLOAT"),
             bigquery.SchemaField("purchases", "INTEGER"),
             bigquery.SchemaField("purchase_value", "FLOAT"),
-            # Obliczone metryki
-            bigquery.SchemaField("cpm", "FLOAT"),
-            bigquery.SchemaField("cpc", "FLOAT"),
             bigquery.SchemaField("ctr", "FLOAT"),
+            bigquery.SchemaField("cpc", "FLOAT"),
+            bigquery.SchemaField("cpm", "FLOAT"),
+            bigquery.SchemaField("roas", "FLOAT"),
         ]
         
         table = bigquery.Table(table_id, schema=schema)
@@ -88,8 +85,9 @@ class MetaAdsSync:
                 logger.info(f"Table {table_id} already exists")
     
     def get_account_insights(self, account_id: str, start_date: str, end_date: str):
-        """Pobiera dane z Meta Ads API - tylko potrzebne pola"""
+        """Pobiera dane z Meta Ads API"""
         
+        # Pola które chcemy pobrać
         fields = [
             'campaign_id',
             'campaign_name',
@@ -98,15 +96,18 @@ class MetaAdsSync:
             'ad_id',
             'ad_name',
             'impressions',
+            'clicks',
             'spend',
-            'inline_link_clicks',  # link clicks
-            'actions',  # tu są landing_page_view, add_to_cart, purchase
-            'action_values',  # wartości konwersji
+            'conversions',
+            'actions',
+            'action_values',
+            'purchase_roas',
             'ctr',
             'cpc',
             'cpm'
         ]
         
+        # Parametry zapytania
         params = {
             'access_token': self.access_token,
             'fields': ','.join(fields),
@@ -115,7 +116,7 @@ class MetaAdsSync:
                 'since': start_date,
                 'until': end_date
             }),
-            'time_increment': 1,
+            'time_increment': 1,  # Dzienne dane
             'limit': 500
         }
         
@@ -127,15 +128,26 @@ class MetaAdsSync:
             response = requests.get(url, params=params)
 
             if response.status_code != 200:
+                error_details = {
+                    'status_code': response.status_code,
+                    'response_text': response.text,
+                    'url': url,
+                    'params': params
+                }
+                logger.error(f"Meta API error details: {error_details}")
+                raise Exception(f"Meta API error: {response.status_code} - {response.text}")
+            
+            if response.status_code != 200:
                 logger.error(f"Meta API error: {response.text}")
                 raise Exception(f"Meta API error: {response.status_code}")
             
             data = response.json()
             all_data.extend(data.get('data', []))
             
+            # Sprawdź czy jest następna strona
             paging = data.get('paging', {})
             url = paging.get('next')
-            params = {}
+            params = {}  # Kolejne strony mają pełny URL
         
         return all_data
     
@@ -144,53 +156,50 @@ class MetaAdsSync:
         
         logger.info(f"Syncing Meta account {account_name} ({account_id})")
         
+        # Daty
         end_date = datetime.now().strftime('%Y-%m-%d')
         start_date = (datetime.now() - timedelta(days=days_back)).strftime('%Y-%m-%d')
         
         try:
+            # Pobierz dane z API
             insights = self.get_account_insights(account_id, start_date, end_date)
             
             if not insights:
                 logger.warning(f"No data for {account_name}")
                 return 0
             
+            # Przetwórz dane
             rows = []
             for insight in insights:
                 # Podstawowe metryki
                 impressions = int(insight.get('impressions', 0))
+                clicks = int(insight.get('clicks', 0))
                 spend = float(insight.get('spend', 0))
-                link_clicks = int(insight.get('inline_link_clicks', 0))
-                
-                # Przetwarzanie actions - tylko te z raportu
+
+                # Konwersje i zakupy z actions
                 actions = insight.get('actions', [])
-                landing_page_views = 0
-                add_to_cart = 0
                 purchases = 0
-                
+                total_conversions = 0
+
                 for action in actions:
                     action_type = action.get('action_type', '')
-                    value = int(action.get('value', 0))
-                    
-                    if action_type == 'landing_page_view':
-                        landing_page_views += value
-                    elif action_type == 'add_to_cart':
-                        add_to_cart += value
-                    elif action_type == 'purchase':
-                        purchases += value
-                
+                    value = float(action.get('value', 0))
+    
+                    if action_type == 'purchase':
+                        purchases += int(value)
+                    if action_type in ['purchase', 'lead', 'complete_registration']:
+                        total_conversions += value
+
                 # Wartości konwersji
                 action_values = insight.get('action_values', [])
-                add_to_cart_value = 0
                 purchase_value = 0
-                
+
                 for action_value in action_values:
-                    action_type = action_value.get('action_type')
-                    value = float(action_value.get('value', 0))
-                    
-                    if action_type == 'add_to_cart':
-                        add_to_cart_value += value
-                    elif action_type == 'purchase':
-                        purchase_value += value
+                    if action_value.get('action_type') == 'purchase':
+                        purchase_value += float(action_value.get('value', 0))
+
+                # ROAS
+                roas = (purchase_value / spend) if spend > 0 else 0
                 
                 rows.append({
                     'sync_timestamp': datetime.now(),
@@ -203,21 +212,19 @@ class MetaAdsSync:
                     'adset_name': insight.get('adset_name'),
                     'ad_id': insight.get('ad_id'),
                     'ad_name': insight.get('ad_name'),
-                    # Metryki z raportu
                     'impressions': impressions,
+                    'clicks': clicks,
                     'spend': round(spend, 2),
-                    'link_clicks': link_clicks,
-                    'landing_page_views': landing_page_views,
-                    'add_to_cart': add_to_cart,
-                    'add_to_cart_value': round(add_to_cart_value, 2),
+                    'conversions': total_conversions,
                     'purchases': purchases,
-                    'purchase_value': round(purchase_value, 2),
-                    # Obliczone
-                    'cpm': round(float(insight.get('cpm', 0)), 2),
-                    'cpc': round(float(insight.get('cpc', 0)), 2),
+                    'purchase_value': round(roas * spend, 2) if roas > 0 else 0,
                     'ctr': round(float(insight.get('ctr', 0)), 2),
+                    'cpc': round(float(insight.get('cpc', 0)), 2),
+                    'cpm': round(float(insight.get('cpm', 0)), 2),
+                    'roas': round(roas, 2),
                 })
             
+            # Zapisz do BigQuery
             if rows:
                 df = pd.DataFrame(rows)
                 table_id = f"{self.project_id}.{self.dataset_id}.meta_ads_performance"
