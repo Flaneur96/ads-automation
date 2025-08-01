@@ -162,51 +162,6 @@ class MetaAdsSync:
             params = {}
         
         return all_data
-
-    def sync_all_meta_accounts():
-    """Synchronizuje wszystkie konta Meta"""
-    import db
-    
-    try:
-        sync = MetaAdsSync()
-        sync.ensure_table_exists()
-        
-        clients = db.get_all_clients()
-        active_clients = [c for c in clients if c.get('active') and c.get('meta_account_id')]
-        
-        logger.info(f"Starting Meta sync for {len(active_clients)} clients")
-        
-        summary = {
-            'total_clients': len(active_clients),
-            'successful': 0,
-            'failed': 0,
-            'total_rows': 0
-        }
-        
-        for client in active_clients:
-            try:
-                # Usuń prefix act_ jeśli jest
-                account_id = client['meta_account_id']
-                if account_id.startswith('act_'):
-                    account_id = account_id[4:]
-                    
-                rows = sync.sync_account_data(
-                    account_id,
-                    client['client_name'],
-                    days_back=30
-                )
-                summary['successful'] += 1
-                summary['total_rows'] += rows
-            except Exception as e:
-                summary['failed'] += 1
-                logger.error(f"Failed {client['client_name']}: {e}")
-        
-        logger.info(f"Meta sync completed: {summary}")
-        return summary
-        
-    except Exception as e:
-        logger.error(f"Meta sync failed: {e}")
-        raise
     
     def sync_account_data(self, account_id: str, account_name: str, days_back: int = 30):
         """Synchronizuje rozszerzone dane jednego konta Meta"""
@@ -359,3 +314,50 @@ class MetaAdsSync:
         except Exception as e:
             logger.error(f"Error syncing {account_name}: {str(e)}")
             raise
+
+
+# FUNKCJA POZA KLASĄ - NA KOŃCU PLIKU
+def sync_all_meta_accounts():
+    """Synchronizuje wszystkie konta Meta"""
+    import db
+    
+    try:
+        sync = MetaAdsSync()
+        sync.ensure_table_exists()
+        
+        clients = db.get_all_clients()
+        active_clients = [c for c in clients if c.get('active') and c.get('meta_account_id')]
+        
+        logger.info(f"Starting Meta sync for {len(active_clients)} clients")
+        
+        summary = {
+            'total_clients': len(active_clients),
+            'successful': 0,
+            'failed': 0,
+            'total_rows': 0
+        }
+        
+        for client in active_clients:
+            try:
+                # Usuń prefix act_ jeśli jest
+                account_id = client['meta_account_id']
+                if account_id.startswith('act_'):
+                    account_id = account_id[4:]
+                    
+                rows = sync.sync_account_data(
+                    account_id,
+                    client['client_name'],
+                    days_back=30
+                )
+                summary['successful'] += 1
+                summary['total_rows'] += rows
+            except Exception as e:
+                summary['failed'] += 1
+                logger.error(f"Failed {client['client_name']}: {e}")
+        
+        logger.info(f"Meta sync completed: {summary}")
+        return summary
+        
+    except Exception as e:
+        logger.error(f"Meta sync failed: {e}")
+        raise
